@@ -1,0 +1,26 @@
+{
+  "name": "dsh-plugin-progress-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 宿主插件：把开发进度里程碑（任务状态 + md 报告）POST 到外部配套服务",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./projector": "./src/projector.js",
+    "./transport": "./src/transport.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "simulate": "node tools/simulate.js",
+    "check": "node --check src/index.js && node --check src/projector.js && node --check src/transport.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "cordis": "*"
+  }
+}
