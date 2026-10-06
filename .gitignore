@@ -1,0 +1,26 @@
+# 依赖目录
+node_modules/
+.venv/
+venv/
+
+# 构建产物
+dist/
+build/
+*.tsbuildinfo
+
+# 运行时数据（后端落盘的里程碑）
+server/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 日志与临时文件
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地环境覆盖
+.env
+.env.local
