@@ -1,16 +1,49 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { fetchHealth, fetchMilestones, fetchSessions } from './api'
+import { ApiError, fetchHealth, fetchMe, fetchMilestones, fetchSessions, logout } from './api'
+import { LoginPage } from './components/LoginPage'
 import { ReportView } from './components/ReportView'
+import { SettingsPanel } from './components/SettingsPanel'
 import { StatusBar } from './components/StatusBar'
 import { TaskCard } from './components/TaskCard'
 import { Timeline } from './components/Timeline'
-import type { HealthResponse, MilestoneRecord, SessionState } from './types'
+import type { HealthStats, MilestoneRecord, SessionState, User } from './types'
 
 const POLL_MS = 3000
 
 export default function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null)
+  // undefined = 还在确认登录态；null = 未登录
+  const [user, setUser] = useState<User | null | undefined>(undefined)
+
+  const refreshUser = useCallback(async () => {
+    try {
+      setUser(await fetchMe())
+    } catch {
+      setUser(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshUser()
+  }, [refreshUser])
+
+  if (user === undefined) {
+    return <div className="splash">加载中…</div>
+  }
+  if (user === null) {
+    return <LoginPage onSuccess={() => void refreshUser()} />
+  }
+  return <Dashboard user={user} onSignedOut={() => setUser(null)} />
+}
+
+interface DashboardProps {
+  user: User
+  onSignedOut: () => void
+}
+
+function Dashboard({ user, onSignedOut }: DashboardProps) {
+  const [view, setView] = useState<'board' | 'settings'>('board')
+  const [health, setHealth] = useState<HealthStats | null>(null)
   const [records, setRecords] = useState<MilestoneRecord[]>([])
   const [sessions, setSessions] = useState<SessionState[]>([])
   const [selectedSession, setSelectedSession] = useState<string | null>(null)
@@ -34,28 +67,31 @@ export default function App() {
       setError(null)
       setLastUpdated(Date.now())
     } catch (cause) {
+      // 会话过期：回到登录页，而不是显示一个永远不会成功的错误
+      if (cause instanceof ApiError && cause.status === 401) {
+        onSignedOut()
+        return
+      }
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [onSignedOut])
 
   useEffect(() => {
     void load()
   }, [load])
 
   useEffect(() => {
-    if (!autoRefresh) return
+    if (!autoRefresh || view !== 'board') return
     const timer = window.setInterval(() => void load(), POLL_MS)
     return () => window.clearInterval(timer)
-  }, [autoRefresh, load])
+  }, [autoRefresh, load, view])
 
-  // 默认选中最新上报的会话
+  // 默认选中最近有活动的会话
   useEffect(() => {
     if (selectedSession || sessions.length === 0) return
-    const newest = [...sessions].sort(
-      (a, b) => (b.lastMilestoneAt ?? 0) - (a.lastMilestoneAt ?? 0),
-    )[0]
+    const newest = [...sessions].sort((a, b) => (b.lastMilestoneAt ?? 0) - (a.lastMilestoneAt ?? 0))[0]
     setSelectedSession(newest.sessionId)
   }, [sessions, selectedSession])
 
@@ -81,6 +117,14 @@ export default function App() {
     if (record.envelope.report) setSelectedDelivery(record.envelope.deliveryId)
   }, [])
 
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } finally {
+      onSignedOut()
+    }
+  }
+
   return (
     <div className="app">
       <StatusBar
@@ -91,40 +135,45 @@ export default function App() {
         loading={loading}
         onToggleAutoRefresh={() => setAutoRefresh((value) => !value)}
         onRefresh={() => void load()}
+        user={user}
+        view={view}
+        onViewChange={setView}
+        onLogout={() => void handleLogout()}
       />
 
-      {sessions.length > 1 && (
-        <div className="session-picker">
-          {sessions.map((item) => (
-            <button
-              key={item.sessionId}
-              type="button"
-              className={item.sessionId === activeState?.sessionId ? 'is-active' : ''}
-              onClick={() => {
-                setSelectedSession(item.sessionId)
-                setSelectedDelivery(null)
-              }}
-            >
-              {item.session.title ?? item.sessionId}
-            </button>
-          ))}
-        </div>
+      {view === 'settings' ? (
+        <SettingsPanel user={user} />
+      ) : (
+        <>
+          {sessions.length > 1 && (
+            <div className="session-picker">
+              {sessions.map((item) => (
+                <button
+                  key={item.sessionId}
+                  type="button"
+                  className={item.sessionId === activeState?.sessionId ? 'is-active' : ''}
+                  onClick={() => {
+                    setSelectedSession(item.sessionId)
+                    setSelectedDelivery(null)
+                  }}
+                >
+                  {item.session.title ?? item.sessionId}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <main className="grid">
+            <TaskCard state={activeState} />
+            <Timeline records={visibleRecords} selectedDelivery={selectedDelivery} onSelect={handleSelect} />
+          </main>
+
+          <ReportView record={reportRecord} />
+        </>
       )}
 
-      <main className="grid">
-        <TaskCard state={activeState} />
-        <Timeline
-          records={visibleRecords}
-          selectedDelivery={selectedDelivery}
-          onSelect={handleSelect}
-        />
-      </main>
-
-      <ReportView record={reportRecord} />
-
       <footer className="footer muted small">
-        数据源：Python 后端 <code>/dsh/progress/v1</code> · 上送方：DSH 插件 dsh-progress-sync ·{' '}
-        每 {POLL_MS / 1000}s 轮询
+        数据源 <code>/api</code> · 上送方 DSH 插件 dsh-progress-sync · 看板每 {POLL_MS / 1000}s 轮询
       </footer>
     </div>
   )

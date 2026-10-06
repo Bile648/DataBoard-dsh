@@ -496,3 +496,193 @@ button:disabled {
   margin-top: 20px;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------- 通用控件 */
+
+button.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08101f;
+  font-weight: 600;
+}
+
+button.button--danger {
+  border-color: #6b2f2f;
+  color: #ff9b9b;
+}
+
+button.button--danger:hover:not(:disabled) {
+  border-color: var(--bad);
+}
+
+input[type='text'],
+input[type='password'],
+input:not([type]) {
+  background: #10141b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.alert--ok {
+  background: #122a20;
+  color: #7fe0b4;
+}
+
+.splash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ 登录 */
+
+.auth-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-card h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.auth-card__hint {
+  margin: 4px 0 0;
+  line-height: 1.7;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ 导航 */
+
+.nav {
+  display: flex;
+  gap: 6px;
+}
+
+.nav button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.status-bar__user {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ 设置 */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
+}
+
+.token-value {
+  flex: 1 1 320px;
+  background: #10141b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.snippet {
+  position: relative;
+  margin-top: 8px;
+}
+
+.snippet > button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+
+.snippet pre {
+  background: #10141b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.table__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}

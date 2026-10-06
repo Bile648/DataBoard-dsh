@@ -115,15 +115,37 @@ export interface SessionState {
   lastSeq: number | null
 }
 
-export interface HealthResponse {
+/** 已登录用户 */
+export interface User {
+  id: number
+  username: string
+  displayName: string | null
+  isAdmin: boolean
+  createdAt: number
+  lastLoginAt: number | null
+}
+
+/** 管理员用户列表里的一项（与 User 同构，单独命名便于以后扩展） */
+export type AdminUser = User
+
+export interface LoginResult {
   ok: boolean
-  service: string
-  version: string
-  schemaVersion: number
-  signatureRequired: boolean
-  time: number
+  user: User
+  expiresAt: number
+}
+
+/** 看板统计（需登录） */
+export interface HealthStats {
+  ok: boolean
   milestones: number
   sessions: number
-  uptimeMs: number
-  jsonl: string
+  users: number
+  authRequired: boolean
+}
+
+export interface IngestTokenInfo {
+  ok: boolean
+  token: string
+  managedByEnv: boolean
+  snippet: string
 }
