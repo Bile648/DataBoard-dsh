@@ -64,6 +64,7 @@ export function apply(ctx, input = {}) {
         todos: null,
         counts: null,
         goal: null,
+        artifacts: [],
         seq: 0,
       })
     }
@@ -113,7 +114,9 @@ export function apply(ctx, input = {}) {
     }
     return buildReport({
       sources: config.report?.sources,
-      artifacts: item.artifacts ?? [],
+      // 里程碑自带交付物就用自己的；否则继承会话最近一次的交付物 ——
+      // 否则「目标完成」这类大节点会因为自身没有产物而退化成助手短消息。
+      artifacts: item.artifacts?.length ? item.artifacts : (state.artifacts ?? []),
       assistantText: state.assistantText,
       readFile: makeFileReader(state, warn),
       maxBytes: config.report?.maxBytes,
@@ -151,6 +154,16 @@ export function apply(ctx, input = {}) {
       state.counts = item.task.counts
     }
     if (item?.changes) state.changes = item.changes
+    if (item?.artifacts?.length) {
+      // 交付物累积（新的在前，按路径去重），供后续里程碑继承
+      const seen = new Set()
+      state.artifacts = [...item.artifacts, ...(state.artifacts ?? [])].filter((artifact) => {
+        const key = artifact?.path ?? JSON.stringify(artifact)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    }
     if (event?.seq) state.seq = event.seq
     const text = assistantTextFromEvent(event)
     if (text) state.assistantText = text

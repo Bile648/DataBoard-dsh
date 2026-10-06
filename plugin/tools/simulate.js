@@ -160,7 +160,7 @@ async function runPipeline(config, events, captured) {
     log: (m) => has('--verbose') && console.log(`    · ${m}`),
   })
 
-  const state = { session: { id: session.id, title: session.title, cwd: CWD }, assistantText: null, changes: null, goal: null, seq: 0 }
+  const state = { session: { id: session.id, title: session.title, cwd: CWD }, assistantText: null, changes: null, goal: null, artifacts: [], seq: 0 }
 
   const readFile = async (path) => {
     const absolute = isAbsolute(path) ? path : resolvePath(CWD, path)
@@ -168,9 +168,19 @@ async function runPipeline(config, events, captured) {
   }
 
   const emit = async (item) => {
+    if (item.artifacts?.length) {
+      // 与插件入口一致：交付物累积，供后续里程碑继承
+      const seen = new Set()
+      state.artifacts = [...item.artifacts, ...state.artifacts].filter((artifact) => {
+        const key = artifact?.path ?? JSON.stringify(artifact)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    }
     const report = await buildReport({
       sources: config.report.sources,
-      artifacts: item.artifacts ?? [],
+      artifacts: item.artifacts?.length ? item.artifacts : state.artifacts,
       assistantText: state.assistantText,
       readFile,
       maxBytes: config.report.maxBytes,
@@ -240,6 +250,11 @@ async function scenarioHappy() {
   const done = envs.find((e) => e.milestone.kind === 'goal' && e.milestone.status === 'completed')
   check('目标完成节点存在', Boolean(done), `title=${done?.milestone?.title}`)
   check('目标完成节点为高优先级（跳过合并窗口）', done?.milestone?.priority === 'high')
+  check(
+    '目标完成节点继承了交付物报告（未降级为助手短消息）',
+    done?.report?.source === 'present' && (done?.report?.bytes ?? 0) > 1000,
+    `source=${done?.report?.source}, bytes=${done?.report?.bytes}`,
+  )
 
   const plan = envs.find((e) => e.milestone.kind === 'plan')
   check('待办快照计数正确', plan?.task?.counts?.total === 3 && plan?.task?.counts?.completed === 2, JSON.stringify(plan?.task?.counts))
