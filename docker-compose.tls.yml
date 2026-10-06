@@ -1,0 +1,35 @@
+# 可选叠加：自动 HTTPS（Caddy 申请并续期 Let's Encrypt 证书）
+#
+#   DSH_DOMAIN=progress.example.com docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# 前置：域名 A 记录已指向本机，且 80/443 端口可从公网访问。
+# 叠加后应用端口仍只绑在回环上，外部只能经 Caddy 进来。
+
+services:
+  dsh-progress:
+    environment:
+      # 走 HTTPS 后必须打开，否则会话 Cookie 缺少 Secure 标记
+      DSH_PROGRESS_SECURE_COOKIE: "1"
+      # 反向代理后面，用它生成正确的插件配置片段地址
+      DSH_PROGRESS_TRUST_PROXY: "1"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: dsh-progress-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DSH_DOMAIN: ${DSH_DOMAIN:?请设置 DSH_DOMAIN，例如 DSH_DOMAIN=progress.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - dsh-progress
+
+volumes:
+  caddy-data:
+  caddy-config:

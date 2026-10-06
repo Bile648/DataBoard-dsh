@@ -1,0 +1,30 @@
+# 构建上下文瘦身。
+# 注意：Dockerfile 需要 server/README.md（pyproject 的 readme 字段），所以不要
+# 用 **/*.md 这类宽泛规则去排除，否则 COPY 会直接失败。
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+node_modules
+**/node_modules
+.npm-cache
+web/dist
+
+# 镜像里的前端产物来自构建阶段，不依赖本地这两处
+server/static
+server/data
+*.db
+*.db-wal
+*.db-shm
+
+**/__pycache__
+**/*.pyc
+.venv
+venv
+.pytest_cache
+
+docs
+tools
+plugin

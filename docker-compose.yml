@@ -1,0 +1,27 @@
+services:
+  dsh-progress:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dsh-progress:1.0.0
+    container_name: dsh-progress
+    restart: unless-stopped
+    ports:
+      # 安全默认：只监听回环，外部访问一律走反向代理（见 deploy/）。
+      # 若确实要直接对外暴露（无 TLS），改成 "8787:8787"，并自行承担明文风险。
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - dsh-progress-data:/data
+    environment:
+      # 摄入令牌：留空则首次启动自动生成，之后在「设置与管理」页查看或轮换
+      DSH_PROGRESS_INGEST_TOKEN: ""
+      # 可选：与令牌并存的 HMAC 校验（兼容不发送令牌的旧插件）
+      DSH_PROGRESS_SECRET: ""
+      # 登录会话有效期（秒），默认 7 天
+      DSH_PROGRESS_SESSION_TTL: "604800"
+      # 走 HTTPS 时务必设为 1，否则会话 Cookie 不会带 Secure 标记
+      DSH_PROGRESS_SECURE_COOKIE: "0"
+      DSH_PROGRESS_LOG_LEVEL: "INFO"
+
+volumes:
+  dsh-progress-data:

@@ -1,0 +1,26 @@
+# Caddy 配置：自动 HTTPS + 反向代理到应用容器。
+# DSH_DOMAIN 由 docker-compose.tls.yml 从环境变量注入。
+
+{$DSH_DOMAIN} {
+	encode zstd gzip
+
+	# 反向代理到同一 compose 网络里的应用
+	reverse_proxy dsh-progress:8787 {
+		# 保留真实客户端信息（后端在 TRUST_PROXY=1 时使用）
+		header_up X-Real-IP {remote_host}
+	}
+
+	# 安全响应头（应用自身也会设，这里再加一层，覆盖静态资源）
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
