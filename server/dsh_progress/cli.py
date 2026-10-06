@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+from pathlib import Path
 from typing import Any
 
 from . import __version__, create_app
@@ -24,9 +25,33 @@ def _load() -> tuple[Config, Database, MilestoneStore]:
     return config, db, MilestoneStore(db)
 
 
+def _generate_password(length: int = 20) -> str:
+    import secrets
+    import string
+
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_=+"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def _read_password(args: argparse.Namespace) -> str:
+    """取密码：随机生成 > 命令行传入 > 交互式输入。
+
+    非交互环境（例如 `docker compose exec -T`、CI）下必须显式选择前两种：
+    getpass 在无法控制终端回声时会静默回退，导致「命令跑完但账号没建成」，
+    所以这里直接拒绝，而不是让它悄悄失败。
+    """
+    if getattr(args, "generate_password", False):
+        return _generate_password()
     if getattr(args, "password", None):
         return args.password
+    if not sys.stdin.isatty():
+        print(
+            "✗ 当前不是交互式终端，无法提示输入密码。\n"
+            "  请改用 --generate-password（推荐，随机生成并打印一次）\n"
+            "  或 --password '<密码>'。",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     first = getpass.getpass("密码: ")
     second = getpass.getpass("确认密码: ")
     if first != second:
@@ -44,6 +69,7 @@ def _ok(message: str) -> None:
 
 def cmd_create_user(args: argparse.Namespace) -> int:
     _, db, _ = _load()
+    generated = bool(args.generate_password)
     password = _read_password(args)
 
     is_admin = args.admin
@@ -62,6 +88,10 @@ def cmd_create_user(args: argparse.Namespace) -> int:
 
     role = "管理员" if user["isAdmin"] else "普通用户"
     _ok(f"已创建 {role} {user['username']}（id={user['id']}）")
+    if generated:
+        # 只在这里打印一次；之后无法再取回明文
+        print(f"\n  初始密码：{password}\n")
+        print("  请立即保存并尽快登录修改。")
     return 0
 
 
@@ -88,6 +118,7 @@ def cmd_list_users(_args: argparse.Namespace) -> int:
 
 def cmd_set_password(args: argparse.Namespace) -> int:
     _, db, _ = _load()
+    generated = bool(args.generate_password)
     password = _read_password(args)
     try:
         changed = auth.set_password(db, args.username, password)
@@ -98,6 +129,8 @@ def cmd_set_password(args: argparse.Namespace) -> int:
         print(f"✗ 用户不存在：{args.username}", file=sys.stderr)
         return 1
     _ok(f"已更新 {args.username} 的密码，该用户的所有登录会话已吊销")
+    if generated:
+        print(f"\n  新密码：{password}\n")
     return 0
 
 
@@ -157,6 +190,27 @@ def cmd_clear_milestones(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    """在线一致备份：用 SQLite 的 VACUUM INTO，无需停服。
+
+    直接 cp 数据库文件在写入过程中可能拿到不一致的快照，所以不提供那种方式。
+    """
+    _, db, _ = _load()
+    target = Path(args.path).expanduser().resolve()
+    if target.exists():
+        print(f"✗ 目标已存在：{target}（VACUUM INTO 不会覆盖）", file=sys.stderr)
+        return 1
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        db.conn.execute("VACUUM INTO ?", (str(target),))
+    except Exception as exc:  # noqa: BLE001 - 直接反馈给运维
+        print(f"✗ 备份失败：{exc}", file=sys.stderr)
+        return 1
+    size_kb = target.stat().st_size / 1024
+    _ok(f"已备份到 {target}（{size_kb:.1f} KB）")
+    return 0
+
+
 def cmd_rebuild_state(_args: argparse.Namespace) -> int:
     _, db, _ = _load()
     count = db.rebuild_state()
@@ -210,7 +264,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("create-user", help="创建账号（注册在 Web 端已关闭）")
     p.add_argument("username")
-    p.add_argument("--password", help="不传则交互式输入")
+    p.add_argument("--password", help="直接指定密码；注意会留在 shell 历史里")
+    p.add_argument("--generate-password", action="store_true", help="随机生成强密码并打印一次（推荐）")
     p.add_argument("--admin", action="store_true", help="设为管理员")
     p.add_argument("--display-name")
     p.set_defaults(func=cmd_create_user)
@@ -221,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("set-password", help="修改密码（会吊销该用户所有登录会话）")
     p.add_argument("username")
     p.add_argument("--password")
+    p.add_argument("--generate-password", action="store_true", help="随机生成强密码并打印一次")
     p.set_defaults(func=cmd_set_password)
 
     p = sub.add_parser("delete-user", help="删除账号")
@@ -238,6 +294,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("clear-milestones", help="清空全部里程碑")
     p.add_argument("--yes", action="store_true", help="跳过确认")
     p.set_defaults(func=cmd_clear_milestones)
+
+    p = sub.add_parser("backup", help="在线一致备份数据库（VACUUM INTO，无需停服）")
+    p.add_argument("path", help="备份文件路径，例如 /data/backup-20261006.db")
+    p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("rebuild-state", help="按事件时间重建会话状态快照")
     p.set_defaults(func=cmd_rebuild_state)

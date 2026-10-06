@@ -13,15 +13,16 @@ services:
     volumes:
       - dsh-progress-data:/data
     environment:
+      # 全部支持从环境变量或 .env 文件注入，避免把密钥写进编排文件
       # 摄入令牌：留空则首次启动自动生成，之后在「设置与管理」页查看或轮换
-      DSH_PROGRESS_INGEST_TOKEN: ""
-      # 可选：与令牌并存的 HMAC 校验（兼容不发送令牌的旧插件）
-      DSH_PROGRESS_SECRET: ""
+      DSH_PROGRESS_INGEST_TOKEN: "${DSH_PROGRESS_INGEST_TOKEN:-}"
+      # 可选：与令牌并存的 HMAC 校验（迁移期兼容不发送令牌的旧插件）
+      DSH_PROGRESS_SECRET: "${DSH_PROGRESS_SECRET:-}"
       # 登录会话有效期（秒），默认 7 天
-      DSH_PROGRESS_SESSION_TTL: "604800"
+      DSH_PROGRESS_SESSION_TTL: "${DSH_PROGRESS_SESSION_TTL:-604800}"
       # 走 HTTPS 时务必设为 1，否则会话 Cookie 不会带 Secure 标记
-      DSH_PROGRESS_SECURE_COOKIE: "0"
-      DSH_PROGRESS_LOG_LEVEL: "INFO"
+      DSH_PROGRESS_SECURE_COOKIE: "${DSH_PROGRESS_SECURE_COOKIE:-0}"
+      DSH_PROGRESS_LOG_LEVEL: "${DSH_PROGRESS_LOG_LEVEL:-INFO}"
 
 volumes:
   dsh-progress-data:
