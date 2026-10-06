@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsh-progress"
+version = "1.0.0"
+description = "DSH 开发进度同步服务：接收里程碑并在共享看板展示"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "Flask>=3.0",
+    # 容器镜像（Linux）里用 gunicorn 作为生产 WSGI 服务器
+    "gunicorn>=21.2; sys_platform != 'win32'",
+]
+
+[project.optional-dependencies]
+# Windows 上 gunicorn 不可用，用 waitress 跑生产
+windows = ["waitress>=3.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+dsh-progress = "dsh_progress.cli:main"
+
+[tool.setuptools]
+packages = ["dsh_progress"]
+
+[tool.setuptools.package-data]
+dsh_progress = ["static/**/*"]

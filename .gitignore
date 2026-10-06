@@ -9,8 +9,12 @@ dist/
 build/
 *.tsbuildinfo
 
-# 运行时数据（后端落盘的里程碑）
+# 运行时数据（后端落盘的里程碑）与构建产物
 server/data/
+server/static/
+*.db
+*.db-wal
+*.db-shm
 
 # Python
 __pycache__/
