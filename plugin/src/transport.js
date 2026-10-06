@@ -27,7 +27,7 @@ export function classifyStatus(status) {
   return RESULT.RETRYABLE
 }
 
-export function buildHeaders(envelope, { timestamp }) {
+export function buildHeaders(envelope, { timestamp, token }) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'X-DSH-Schema': String(envelope.schemaVersion ?? 1),
@@ -36,6 +36,8 @@ export function buildHeaders(envelope, { timestamp }) {
     'User-Agent': `dsh-progress/${PLUGIN_VERSION}`,
   }
   if (envelope.session?.id) headers['X-DSH-Session'] = String(envelope.session.id)
+  // 摄入令牌是主要凭据；HMAC 签名为可选的第二层（兼容旧部署）
+  if (token) headers['Authorization'] = `Bearer ${token}`
   return headers
 }
 
@@ -47,6 +49,7 @@ export async function postMilestone(envelope, options = {}) {
   const {
     endpoint,
     secret = '',
+    token = '',
     timeoutMs = 8000,
     fetchImpl = globalThis.fetch,
     path = '/dsh/progress/v1/milestones',
@@ -56,7 +59,7 @@ export async function postMilestone(envelope, options = {}) {
   const timestamp = Date.now()
   // 签名必须针对最终发送的字节，所以先在本地序列化一次并复用
   const rawBody = JSON.stringify(envelope)
-  const headers = buildHeaders(envelope, { secret, timestamp })
+  const headers = buildHeaders(envelope, { timestamp, token })
   if (secret) headers['X-DSH-Signature'] = `sha256=${signBody(secret, timestamp, rawBody)}`
 
   const controller = new AbortController()

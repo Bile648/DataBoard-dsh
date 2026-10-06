@@ -14,7 +14,10 @@ export const DEFAULTS = {
   /** 外部配套服务基地址；插件会拼接 /dsh/progress/v1/milestones */
   endpoint: 'http://127.0.0.1:8787',
 
-  /** 密钥：生产走 credentials 服务（secretRef），联调可直接给 secret */
+  /** 摄入令牌（部署后在看板的管理设置里获取）。这是主要凭据。 */
+  token: '',
+
+  /** HMAC 密钥：可选的第二层校验，兼容未启用账户体系的旧部署 */
   secretRef: 'progress-webhook',
   secret: '',
 
@@ -81,6 +84,9 @@ export function resolveConfig(input = {}) {
   // 环境变量兜底，方便在没有 DSH 的情况下联调
   if (!input.endpoint && process.env.DSH_PROGRESS_ENDPOINT) {
     merged.endpoint = process.env.DSH_PROGRESS_ENDPOINT
+  }
+  if (!input.token && process.env.DSH_PROGRESS_TOKEN) {
+    merged.token = process.env.DSH_PROGRESS_TOKEN
   }
   if (!input.secret && process.env.DSH_PROGRESS_SECRET) {
     merged.secret = process.env.DSH_PROGRESS_SECRET

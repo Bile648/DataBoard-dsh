@@ -129,6 +129,7 @@ export class Outbox {
     const result = await postMilestone(item.envelope, {
       endpoint: this.config.endpoint,
       secret: this.config.secret,
+      token: this.config.token,
       timeoutMs: this.config.timeoutMs,
     })
     item.attempts += 1
