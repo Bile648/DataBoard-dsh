@@ -41,12 +41,29 @@ databoard/
 ├─ server/                 Python 后端（Flask，零额外依赖）
 │  ├─ app.py               路由 / 验签 / 校验
 │  └─ store.py             JSONL 落盘 + 幂等去重 + 状态折叠
-└─ web/                    React + TypeScript 看板（Vite）
-   └─ src/
-      ├─ App.tsx           轮询与布局
-      ├─ markdown.ts       无依赖的极简 markdown 渲染器
-      └─ components/       StatusBar / TaskCard / Timeline / ReportView
+├─ web/                    React + TypeScript 看板（Vite）
+│  └─ src/
+│     ├─ App.tsx           轮询与布局
+│     ├─ markdown.ts       无依赖的极简 markdown 渲染器
+│     └─ components/       StatusBar / TaskCard / Timeline / ReportView
+└─ tools/                  开发工具
+   └─ asar.mjs             按需读取 app.asar 内的 DSH 源码
 ```
+
+### tools/asar.mjs —— 读 DSH 源码
+
+DSH 的实现代码在 `D:\dsh\resources\app.asar` 里，普通文件工具读不了它。这个工具能按需列出、
+打印、搜索、提取其中的文件 —— 开发 DSH 插件时核对契约（服务签名、事件载荷、配置 schema、
+loader 补丁语法）靠的就是它，本项目的接口设计全部据此验证过。
+
+```powershell
+node tools/asar.mjs list "dsh-app-boot"           # 列出路径含该子串的文件
+node tools/asar.mjs cat dsh/package.json          # 打印单个文件
+node tools/asar.mjs grep "dsh-app-boot" "insert"  # 在匹配文件里搜索关键词
+node tools/asar.mjs extract <前缀> <输出目录>       # 按前缀批量提取
+```
+
+默认读取 `D:\dsh\resources\app.asar`，可用环境变量 `ASAR_PATH` 覆盖。
 
 ## 快速开始
 
