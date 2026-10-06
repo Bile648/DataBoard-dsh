@@ -129,21 +129,25 @@ npm run render-check                            # 拉真实后端数据 → 真�
 | `DSH_PROGRESS_ENDPOINT` | 插件 | `http://127.0.0.1:8787` |
 | `VITE_API_BASE` | 前端 | `http://127.0.0.1:8787` |
 
-## 装进 DSH profile（可选，会让插件真正在 DSH 内运行）
+## 装进 DSH profile（已实测可用）
 
-插件是纯 ESM，无需构建。把它作为依赖链到当前 profile 并加一条 loader 入口：
+插件是纯 ESM，无需构建，也无需 npm 安装。在 profile 的 `cordis.patch.yml` 追加一个不带 `id` 的 `insert` 条目：
 
 ```yaml
-# C:\Users\YH\.dsh\profiles\web\cordis.patch.yml
-- id: progress-sync
-  module: dsh-plugin-progress-sync     # 或在 profile/package.json 里用 file: 链接本仓库的 plugin/
-  config:
-    endpoint: http://127.0.0.1:8787
-    secret: dev-secret-123
+# $DSH_HOME/profiles/<profile>/cordis.patch.yml
+- insert:
+    - id: progress-sync
+      name: "D:/path/to/plugin/src/index.js"
+      config:
+        endpoint: http://127.0.0.1:8787
+        secret: dev-secret-123
 ```
 
-> ⚠️ 这一步会改动正在运行的 profile（影响所有会话），建议确认后再做。
-> 插件代码运行在宿主 Node 进程内，其网络访问**不受**审批门控 —— 装上即等于授权它把进度发往 `endpoint`。
+启用了 `dsh-hmr` 时会实时重载。细节与**致命风险说明**（未处理 rejection 会让宿主退出）见
+[plugin/README.md](plugin/README.md#接入-dsh-profile已实测)。实机验证结果见
+[docs/mount-test-report.md](docs/mount-test-report.md)。
+
+> ⚠️ 插件代码运行在宿主 Node 进程内，其网络访问**不受**审批门控 —— 装上即等于授权它把进度发往 `endpoint`。
 
 ## 当前状态
 

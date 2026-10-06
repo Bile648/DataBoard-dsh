@@ -45,7 +45,8 @@ async function main() {
 
   check('拉到后端数据', milestones.length > 0 && sessions.length > 0, `${milestones.length} 条里程碑 / ${sessions.length} 个会话`)
 
-  const state = sessions[0]
+  // 与 App.tsx 一致：默认选中最近有活动的会话
+  const state = [...sessions].sort((a, b) => (b.lastMilestoneAt ?? 0) - (a.lastMilestoneAt ?? 0))[0]
   const reportRecord = milestones.find((item) => item.envelope.report) ?? null
 
   const html = renderToString(
@@ -77,7 +78,8 @@ async function main() {
   check('待办条目已渲染', Boolean(firstTodo) && html.includes(firstTodo), firstTodo)
 
   check('待办进度条已渲染', html.includes('progress__bar'))
-  check('交付物清单已渲染', html.includes('progress-sync-design.md'))
+  const firstArtifact = state.artifacts?.[0]?.path ?? ''
+  check('交付物清单已渲染', Boolean(firstArtifact) && html.includes(firstArtifact), firstArtifact)
 
   check('时间线已渲染里程碑', html.includes('timeline__item'), `${milestones.length} 条`)
   check(

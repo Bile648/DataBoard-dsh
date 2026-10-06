@@ -19,8 +19,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "peerDependencies": {
-    "cordis": "*"
   }
 }

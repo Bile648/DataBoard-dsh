@@ -5,6 +5,11 @@
  *   - `session/event` 是 fire-and-forget 的 emit，**回调内绝不做网络或磁盘 I/O**；
  *     回调只做「投影 + 入队」，异步装配由 setImmediate 脱离事件回调执行。
  *   - 所有监听与定时器经 ctx.effect 注册，卸载 / HMR 时自动清理。
+ *
+ * 宿主安全约束（实测自 dsh-app-boot 文档的失败模式表）：
+ *   脱离 apply() 的 Promise 一旦产生**未处理 rejection**，宿主会「释放应用并以非零码退出」。
+ *   因此本文件所有回调（事件监听、定时器、出队）都经 safe() 包裹，
+ *   保证任何异常都只降级为一条告警，绝不外泄到宿主。
  */
 
 import { promises as nodeFs } from 'node:fs'
@@ -30,28 +35,44 @@ export const inject = ['timer']
 
 export function apply(ctx, input = {}) {
   const config = resolveConfig(input)
-  if (!config.enabled) {
-    ctx.logger?.info?.(`[${PLUGIN_NAME}] 已禁用，跳过注册`)
-    return
-  }
-
   const log = (message) => ctx.logger?.info?.(`[${PLUGIN_NAME}] ${message}`)
   const warn = (message) => ctx.logger?.warn?.(`[${PLUGIN_NAME}] ${message}`)
+
+  /** 把任何回调变成「绝不可能向宿主抛出」的版本 */
+  const safe = (label, handler) => (...args) => {
+    try {
+      const result = handler(...args)
+      if (result && typeof result.then === 'function') {
+        result.catch((error) => warn(`${label} 异步失败：${error?.message || error}`))
+      }
+      return result
+    } catch (error) {
+      warn(`${label} 失败：${error?.message || error}`)
+      return undefined
+    }
+  }
+
+  if (!config.enabled) {
+    log('已禁用，跳过注册')
+    return
+  }
 
   const outbox = new Outbox(config, { log })
   const coalescer = new Coalescer({
     windowMs: config.coalesceWindowMs,
     dedupeWindowMs: config.dedupeWindowMs,
-    onFlush: (item) => {
+    // 合并窗口的回调同样要防漏：它在定时器里跑，抛出会成为未捕获异常
+    setTimer: (callback, delay) => setTimeout(safe('合并窗口', callback), delay),
+    onFlush: safe('出队', (item) => {
       // 合并窗口冲刷后才组信封：deliveryId 在此生成，重试期间保持不变
       const envelope = buildEnvelope(item, { session: item.session, config, report: item.report ?? null })
       outbox.enqueue(envelope)
-    },
+    }),
     log,
   })
   outbox.start()
 
-  /** 每个会话的累积上下文（助手收尾消息、变更概览、待办、目标） */
+  /** 每个会话的累积上下文（助手收尾消息、变更概览、待办、目标、交付物） */
   const sessions = new Map()
   const sessionOf = (session) => {
     const id = session?.id ?? 'unknown'
@@ -147,7 +168,7 @@ export function apply(ctx, input = {}) {
 
   // ---------------------------------------------------------------- 事件监听
 
-  const track = (state, item, session, event) => {
+  const track = (state, item, event) => {
     if (item?.task?.goal) state.goal = item.task.goal
     if (item?.task?.todos) {
       state.todos = item.task.todos
@@ -165,98 +186,84 @@ export function apply(ctx, input = {}) {
       })
     }
     if (event?.seq) state.seq = event.seq
+    if (item) enqueueMilestone({ ...item, seq: event?.seq ?? state.seq }, state)
+  }
+
+  const isEnabled = (kind) => config.milestones?.[kind] !== false
+
+  const disposers = []
+  const listen = (event, label, handler) => disposers.push(ctx.on(event, safe(label, handler)))
+
+  // 1) 会话事件：工具调用、回合结束、工作区变更
+  listen('session/event', 'session/event 监听', (session, event) => {
+    if (!session?.id || !event?.type) return
+    const state = sessionOf(session)
+    // 累计文本与用量，即使本次不产生里程碑
     const text = assistantTextFromEvent(event)
     if (text) state.assistantText = text
     const usage = usageFromEvent(event)
     if (usage) state.usage = usage
-    if (item) enqueueMilestone({ ...item, seq: event?.seq ?? state.seq }, state)
-  }
+    if (event.seq) state.seq = event.seq
 
-  const disposers = []
-
-  // 1) 会话事件：工具调用、回合结束、工作区变更
-  disposers.push(
-    ctx.on('session/event', (session, event) => {
-      if (!session?.id || !event?.type) return
-      const state = sessionOf(session)
-      // 累计 usage/文本，即使不产生里程碑
-      const text = assistantTextFromEvent(event)
-      if (text) state.assistantText = text
-      const usage = usageFromEvent(event)
-      if (usage) state.usage = usage
-      if (event.seq) state.seq = event.seq
-
-      const item = projectSessionEvent(event, { cwd: state.session.cwd })
-      if (!item) return
-      if (!isEnabled(item.milestone.kind)) return
-      track(state, item, session, event)
-    }),
-  )
+    const item = projectSessionEvent(event, { cwd: state.session.cwd })
+    if (!item) return
+    if (!isEnabled(item.milestone.kind)) return
+    track(state, item, event)
+  })
 
   // 2) 目标状态：最接近「任务状态」的权威来源
-  disposers.push(
-    ctx.on('goal/changed', (payload) => {
-      const agent = payload?.agent
-      if (!isEnabled(MILESTONE.GOAL)) return
-      const state = sessionOf({ id: agent?.id, title: null })
-      const item = projectGoalChange(payload?.change)
-      track(state, item, null, null)
-    }),
-  )
+  listen('goal/changed', 'goal/changed 监听', (payload) => {
+    if (!isEnabled(MILESTONE.GOAL)) return
+    const state = sessionOf({ id: payload?.agent?.id, title: null })
+    track(state, projectGoalChange(payload?.change), null)
+  })
 
   // 3) 阻塞与失败：高优先通道
-  disposers.push(
-    ctx.on('agent/error', (payload) => {
-      if (!isEnabled(MILESTONE.BLOCKED)) return
-      const state = sessionOf({ id: payload?.agent?.id })
-      const error = payload?.error ?? {}
-      track(
-        state,
-        projectError({
-          stage: `turn ${payload?.turn ?? '?'} step ${payload?.step ?? '?'}`,
-          code: error.code ?? 'unknown',
-          message: error.message ?? String(error),
-        }),
-        null,
-        null,
-      )
-    }),
-  )
+  listen('agent/error', 'agent/error 监听', (payload) => {
+    if (!isEnabled(MILESTONE.BLOCKED)) return
+    const state = sessionOf({ id: payload?.agent?.id })
+    const error = payload?.error ?? {}
+    track(
+      state,
+      projectError({
+        stage: `turn ${payload?.turn ?? '?'} step ${payload?.step ?? '?'}`,
+        code: error.code ?? 'unknown',
+        message: error.message ?? String(error),
+      }),
+      null,
+    )
+  })
 
   // 4) workflow 阶段
-  disposers.push(
-    ctx.on('workflow/phase', (info, title) => {
-      if (!isEnabled(MILESTONE.PHASE)) return
-      const state = sessions.get(info?.sessionId) ?? sessionOf({ id: info?.sessionId ?? 'workflow' })
-      track(state, projectWorkflowPhase(title, info), null, null)
-    }),
-  )
+  listen('workflow/phase', 'workflow/phase 监听', (info, title) => {
+    if (!isEnabled(MILESTONE.PHASE)) return
+    const state = sessions.get(info?.sessionId) ?? sessionOf({ id: info?.sessionId ?? 'workflow' })
+    track(state, projectWorkflowPhase(title, info), null)
+  })
 
   // 5) 冲刷检查点：会话 flush 时强制把合并窗口内的内容推出去
-  disposers.push(
-    ctx.on('session/flush', () => {
-      coalescer.flush()
-    }),
-  )
+  listen('session/flush', 'session/flush 监听', () => {
+    coalescer.flush()
+  })
 
   // 6) 会话生命周期（默认关闭）
   if (isEnabled(MILESTONE.SESSION)) {
-    disposers.push(
-      ctx.on('session/created', (session) => {
-        const state = sessionOf(session)
-        track(
-          state,
-          { milestone: { kind: MILESTONE.SESSION, status: 'started', title: '会话开始', priority: 'normal', sequenceKey: 'session' } },
-          session,
-          null,
-        )
-      }),
-    )
-  }
-
-  function isEnabled(kind) {
-    const key = kind === MILESTONE.BLOCKED ? 'blocked' : kind
-    return config.milestones?.[key] !== false
+    listen('session/created', 'session/created 监听', (session) => {
+      const state = sessionOf(session)
+      track(
+        state,
+        {
+          milestone: {
+            kind: MILESTONE.SESSION,
+            status: 'started',
+            title: '会话开始',
+            priority: 'normal',
+            sequenceKey: 'session',
+          },
+        },
+        null,
+      )
+    })
   }
 
   // ------------------------------------------------------------ 生命周期收尾
@@ -269,7 +276,11 @@ export function apply(ctx, input = {}) {
         warn(`卸载监听失败：${error?.message || error}`)
       }
     }
-    coalescer.flush()
+    try {
+      coalescer.flush()
+    } catch (error) {
+      warn(`收尾冲刷失败：${error?.message || error}`)
+    }
     outbox.stop({ timeoutMs: 5000 }).catch((error) => warn(`关闭发件箱失败：${error?.message || error}`))
   })
 

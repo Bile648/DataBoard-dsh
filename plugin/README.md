@@ -58,18 +58,34 @@ node plugin/tools/simulate.js --scenario happy   # 只跑某个场景
 }
 ```
 
-## 接入 DSH profile
+## 接入 DSH profile（已实测）
+
+profile 位于 `$DSH_HOME/profiles/<name>`。在 profile 的 `cordis.patch.yml` 追加一个**不带 `id` 的 `insert` 条目**
+即可挂载，**无需 npm 安装**：
 
 ```yaml
-# C:\Users\YH\.dsh\profiles\web\cordis.patch.yml
-- id: progress-sync
-  module: dsh-plugin-progress-sync
-  config:
-    endpoint: http://127.0.0.1:8787
-    secret: dev-secret-123
+- insert:
+    - id: progress-sync
+      name: "D:/path/to/plugin/src/index.js"   # 绝对路径 / file URL / 包标识符均可
+      config:
+        endpoint: http://127.0.0.1:8787
+        secret: dev-secret-123
 ```
 
-`plugin/src/index.js` 导出的 `name` / `inject` / `apply` 即 cordis 插件契约；
-监听的宿主事件为 `session/event`、`goal/changed`、`agent/error`、`workflow/phase`、`session/flush`、`session/created`。
+要点（均来自本机 `@deepseek-ai/dsh-app-boot` 文档的实测确认）：
+
+- `insert` **不带 `id`** = 追加到根入口列表；带 `id` 则插入到该 group 内部。
+- 插入名支持绝对路径 / file URL / 包标识符；加载时会把绝对路径自动转成 file URL。
+- 插件名要指向**入口文件**而不是目录 —— ESM 不做目录解析。
+- 空补丁文件（或仅含注释）**会导致启动失败**；要停用该层请写 `[]`。
+- 启用了 `dsh-hmr` 时，改补丁文件会实时重载，不需要重启进程。
+
+### ⚠️ 宿主致命风险（改代码前必读）
+
+`dsh-app-boot` 的失败模式表明确规定：脱离 `apply()` 返回的 Promise 一旦产生**未处理 rejection**，
+宿主要「释放应用并以非零码退出」。同理，同步回调（定时器、流监听）抛出的未捕获异常也是致命错误。
+
+因此本插件的**所有**事件监听、定时器回调与出队逻辑都经 `safe()` 包裹（见 `src/index.js`），
+任何异常都只降级为一条告警，绝不外泄到宿主。修改本插件时必须保持这个约束。
 
 > ⚠️ 插件运行在 DSH 宿主进程内，**网络访问不受审批门控**。装上即等于授权它把进度发往 `endpoint`。
